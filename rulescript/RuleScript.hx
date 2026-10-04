@@ -224,21 +224,46 @@ class RuleScript
 	}
 
 	/**
-	 * This method allows you to either execute a `Expr` or a string.
-	 * pretty self explanatory...
+	 * This method allows you to either execute an `Expr` or a string.
 	 * 
-	 * @param code Either a `Expr` or a `String`.
-	 * @return Dynamic Whether gets returned after executing...
+	 * @param code Either an `Expr` or a `String`.
+	 * @return Dynamic What gets returned after executing...
 	 */
 	public function execute(code:EitherType<String, Expr>):Dynamic
 	{
-		return access.execute(code is String ? parser.parse(cast code) : cast code);
+		var ast:Expr = null;
+
+		if (code is String)
+		{
+			if (hasErrorHandler)
+			{
+				try
+				{
+					ast = parser.parse(cast code);
+				}
+				catch (e:haxe.Exception)
+				{
+					errorHandler(e);
+					return null;
+				}
+			}
+			else
+			{
+				ast = parser.parse(cast code);
+			}
+		}
+		else
+		{
+			ast = cast code;
+		}
+
+		return ast != null ? access.execute(ast) : null;
 	}
 
 	/**
 	 * Tries to execute the given code and optionally handles exceptions with a custom catch.
 	 * 
-	 * @param code Either a string or a `Expr`.
+	 * @param code Either a string or an `Expr`.
 	 * @param customCatch (Optional) Exception catch error.
 	 * @return It returns either the result of the execution or information about the error.
 	 */
@@ -248,8 +273,10 @@ class RuleScript
 		{
 			execute(code);
 		}
-		catch (v)
+		catch (v:haxe.Exception)
+		{
 			customCatch != null ? customCatch(v) : v.details();
+		}
 	}
 
 	/**

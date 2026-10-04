@@ -211,7 +211,7 @@ class Tools
 				case DImport(path, star, alias, func):
 					pushExpr(EImport(path.join('.'), star, alias, func));
 				case DUsing(path):
-					pushExpr(EUsing(path));
+					pushExpr(EUsing(path.join('.')));
 				case DClass(c):
 					pushClassDecl(c);
 				case DTypedef(c):

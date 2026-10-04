@@ -67,9 +67,7 @@ RuleScript is an [HScript](https://github.com/HaxeFoundation/hscript) addon feat
 ## Compatibility
 
 The following HScript versions are currently compatible:
-- HScript 2.6.0
-- HScript 2.7.0
-- HScript git [0c7f99d](https://github.com/HaxeFoundation/hscript/tree/0c7f99dbacd5382d9266cf8dfa6192ef80e58ea4)
+- HScript git [e38a276](https://github.com/HaxeFoundation/hscript/tree/e38a276448c746e9025cf70d4b4d92294c11e82d)
 
 ## Additional tools
 

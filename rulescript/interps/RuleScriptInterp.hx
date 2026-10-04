@@ -229,12 +229,6 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			return v1 - v2; 
 		});
 
-		binops.set("??", function(e1, e2):Dynamic { 
-			var v1:Dynamic = me.expr(e1); 
-			if (v1 != null) return v1; 
-			return me.expr(e2); 
-		});
-
 		assignOp("??=", function(v1:Dynamic, v2:Dynamic):Dynamic { 
 			return v1 != null ? v1 : v2; 
 		});
@@ -306,8 +300,6 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 	override function assign(e1:Expr, e2:Expr):Dynamic
 	{
-		var v = expr(e2);
-
 		#if hscriptPos
 		curExpr = e1;
 		#end
@@ -315,6 +307,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		switch (hscript.Tools.expr(e1))
 		{
 			case EIdent(id):
+				var v = expr(e2);
 				if (id == "this" && superInstance != null && Std.isOfType(superInstance, rulescript.types.ScriptedAbstract.ScriptedAbstractInstance)) {
 					cast(superInstance, rulescript.types.ScriptedAbstract.ScriptedAbstractInstance).value = v;
 					return v;
@@ -365,33 +358,37 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 						}
 					}
 				}
-			case EField(e, f):
-				v = set(expr(e), f, v);
+				return v;
+
 			case ETypeVarPath(_path):
+				var v = expr(e2);
 				final path:Array<String> = _path.copy();
 				final f:String = path.pop();
 
 				v = set(resolveTypeOrValue(path), f, v);
+				return v;
+
 			case EArray(e, index):
 				var arr:Dynamic = expr(e);
-				var index:Dynamic = expr(index);
+				var indexVal:Dynamic = expr(index);
+				var v = expr(e2);
 
 				if (Std.isOfType(arr, rulescript.types.ScriptedAbstract.ScriptedAbstractInstance))
 					arr = cast(arr, rulescript.types.ScriptedAbstract.ScriptedAbstractInstance).value;
 
 				if (isMap(arr))
 				{
-					setMapValue(arr, index, v);
+					setMapValue(arr, indexVal, v);
 				}
 				else
 				{
-					arr[index] = v;
+					arr[indexVal] = v;
 				}
+				return v;
 
 			default:
-				error(EInvalidOp("="));
+				return super.assign(e1, e2);
 		}
-		return v;
 	}
 
 	override function evalAssignOp(op:String, fop:(Dynamic, Dynamic) -> Dynamic, e1:Expr, e2:Expr):Dynamic
@@ -421,10 +418,6 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 					else
 						l.r = v;
 				}
-			case EField(e, f):
-				var obj = expr(e);
-				v = fop(get(obj, f), expr(e2));
-				v = set(expr(e), f, v);
 			case ETypeVarPath(_path):
 				final path:Array<String> = _path.copy();
 				final f:String = path.pop();
@@ -433,23 +426,23 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 				v = set(resolveTypeOrValue(path), f, v);
 			case EArray(e, index):
 				var arr:Dynamic = expr(e);
-				var index:Dynamic = expr(index);
+				var indexVal:Dynamic = expr(index);
 
 				if (Std.isOfType(arr, rulescript.types.ScriptedAbstract.ScriptedAbstractInstance))
 					arr = cast(arr, rulescript.types.ScriptedAbstract.ScriptedAbstractInstance).value;
 
 				if (isMap(arr))
 				{
-					v = fop(getMapValue(arr, index), expr(e2));
-					setMapValue(arr, index, v);
+					v = fop(getMapValue(arr, indexVal), expr(e2));
+					setMapValue(arr, indexVal, v);
 				}
 				else
 				{
-					v = fop(arr[index], expr(e2));
-					arr[index] = v;
+					v = fop(arr[indexVal], expr(e2));
+					arr[indexVal] = v;
 				}
 			default:
-				return error(EInvalidOp(op));
+				return super.evalAssignOp(op, fop, e1, e2);
 		}
 		return v;
 	}
@@ -458,9 +451,12 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 	{
 		#if hscriptPos
 		curExpr = e;
-		var e = e.e;
+		var edef = e.e;
+		#else
+		var edef = e;
 		#end
-		switch (e)
+
+		switch (edef)
 		{
 			case EIdent(id):
 				var l:Dynamic = locals.get(id);
@@ -494,52 +490,41 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 					}
 				}
 				return v;
-			case EField(e, f):
-				var obj = expr(e);
-				var v:Dynamic = get(obj, f);
-				if (prefix)
-				{
-					v += delta;
-					set(obj, f, v);
-				}
-				else
-					set(obj, f, v + delta);
-				return v;
-			case EArray(e, index):
-				var arr:Dynamic = expr(e);
-				var index:Dynamic = expr(index);
+			case EArray(arrExpr, index):
+				var arr:Dynamic = expr(arrExpr);
+				var indexVal:Dynamic = expr(index);
 				
 				if (Std.isOfType(arr, rulescript.types.ScriptedAbstract.ScriptedAbstractInstance))
 					arr = cast(arr, rulescript.types.ScriptedAbstract.ScriptedAbstractInstance).value;
 
 				if (isMap(arr))
 				{
-					var v = getMapValue(arr, index);
+					var v = getMapValue(arr, indexVal);
 					if (prefix)
 					{
 						v += delta;
-						setMapValue(arr, index, v);
+						setMapValue(arr, indexVal, v);
 					}
 					else
 					{
-						setMapValue(arr, index, v + delta);
+						setMapValue(arr, indexVal, v + delta);
 					}
 					return v;
 				}
 				else
 				{
-					var v = arr[index];
+					var v = arr[indexVal];
 					if (prefix)
 					{
 						v += delta;
-						arr[index] = v;
+						arr[indexVal] = v;
 					}
 					else
-						arr[index] = v + delta;
+						arr[indexVal] = v + delta;
 					return v;
 				}
 			default:
-				return error(EInvalidOp((delta > 0) ? "++" : "--"));
+				return super.increment(e, prefix, delta);
 		}
 	}
 
@@ -1194,7 +1179,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			if (localSuper != null && localSuper.r != null) return call(o, localSuper.r, args);
 		}
 		
-		return call(o, get(o, f), args);
+		return super.fcall(o, f, args);
 	}
 
 	override function cnew(cl:String, args:Array<Dynamic>):Dynamic

@@ -196,25 +196,6 @@ class HScriptParser extends hscript.Parser
 		opPriority.set('...', -2);
 	}
 
-	#if hscriptPos
-	override function token()
-	{
-		var t = tokens.pop();
-		if (t != null)
-		{
-			tokenMin = t.min;
-			tokenMax = t.max;
-			return t.t;
-		}
-		oldTokenMin = tokenMin;
-		oldTokenMax = tokenMax;
-		tokenMin = (this.char < 0) ? currentPos : currentPos - 1;
-		var t:Token = _token();
-		tokenMax = (this.char < 0) ? currentPos - 1 : currentPos - 2;
-		return t;
-	}
-	#end
-
 	var isMainBlock:Bool = false;
 
 	override function parseString(s:String, ?origin:String = "hscript", ?position:Int = 0):Expr
@@ -1202,7 +1183,7 @@ class HScriptParser extends hscript.Parser
 
 				ensure(TSemicolon);
 
-				return DUsing(path.join('.'));
+				return DUsing(path);
 			case "class":
 				var name = getIdent();
 				var params = parseParams();
@@ -1765,25 +1746,8 @@ class HScriptParser extends hscript.Parser
 	{
 		return switch (t)
 		{
-			case TEof: "<eof>";
-			case TConst(c): constString(c);
-			case TId(s): s;
-			case TOp(s): s;
-			case TPOpen: "(";
-			case TPClose: ")";
-			case TBrOpen: "{";
-			case TBrClose: "}";
-			case TDot: ".";
-			case TQuestionDot: "?.";
-			case TComma: ",";
-			case TSemicolon: ";";
-			case TBkOpen: "[";
-			case TBkClose: "]";
-			case TQuestion: "?";
-			case TDoubleDot: ":";
-			case TMeta(id): "@" + id;
-			case TPrepro(id): "#" + id;
 			case TApostr: "<apostrophe>";
+			default: super.tokenString(t);
 		}
 	}
 
