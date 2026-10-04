@@ -328,8 +328,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 						if (!checkRuntimeType(v, expected)) {
 							final got = Type.getClassName(Type.getClass(v)) ?? Std.string(Type.typeof(v));
 							final pos = posInfos();
-							final posStr = pos != null ? ' [Line ' + pos.lineNumber + ']' : '';
-							throw new haxe.Exception('Type Mismatch Error: Variable "$id" expects type $expected, but got $got $posStr');
+							throw new haxe.Exception('Type Mismatch Error: Variable "$id" expects type $expected, but got $got');
 						}
 					}
 				}
@@ -893,8 +892,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 							if (!me.checkRuntimeType(args[i], expectedType)) {
 								final got = Type.getClassName(Type.getClass(args[i])) ?? Std.string(Type.typeof(args[i]));
 								final pos = me.posInfos();
-								final posStr = pos != null ? ' [Line ' + pos.lineNumber + ']' : '';
-								throw new haxe.Exception('Type Mismatch Error: Argument "$pName" expects type $expectedType, but got $got $posStr');
+								throw new haxe.Exception('Type Mismatch Error: Argument "$pName" expects type $expectedType, but got $got');
 							}
 						}
 
