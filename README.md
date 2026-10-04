@@ -37,7 +37,6 @@ RuleScript is an [HScript](https://github.com/HaxeFoundation/hscript) addon feat
 
 ## Limitations
 
-- Script `using` callbacks support a maximum of 8 arguments.
 - AbstractMacro only supports `static` [abstract](https://haxe.org/manual/types-abstract-class.html) fields.
 
 ## Install

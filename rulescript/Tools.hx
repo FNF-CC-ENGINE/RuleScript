@@ -40,27 +40,18 @@ class Tools
 		return _printer.typeToString(type);
 	}
 
-	@:noCompletion public static function usingFunction(?o:Dynamic, f:Function, ?a1:Dynamic, ?a2:Dynamic, ?a3:Dynamic, ?a4:Dynamic, ?a5:Dynamic, ?a6:Dynamic,
-			?a7:Dynamic, ?a8:Dynamic)
+	@:noCompletion public static function createUsingFunction(o:Dynamic, f:Function):Dynamic
 	{
-		#if interp
-		var args:Array<Dynamic> = [o, a1, a2, a3, a4, a5, a6, a7, a8];
-		var i:Int = 8;
-
-		while (i >= 0)
+		return Reflect.makeVarArgs(function(args:Array<Dynamic>) 
 		{
-			if (args[i] == null)
-				args.pop();
-			else
-				break;
-			i--;
-		}
-		return Reflect.callMethod(o, f, args);
-		#elseif rulescript_use_hl_fixes
-		return __hl_callMethod(f, [o, a1, a2, a3, a4, a5, a6, a7, a8]);
-		#else
-		return Reflect.callMethod(o, f, [o, a1, a2, a3, a4, a5, a6, a7, a8]);
-		#end
+			args.unshift(o);
+			
+			#if rulescript_use_hl_fixes
+			return __hl_callMethod(f, args);
+			#else
+			return Reflect.callMethod(o, f, args);
+			#end
+		});
 	}
 
 	public static function makeRestFunction(f:Array<Dynamic>->Dynamic, argNum:Int):Dynamic

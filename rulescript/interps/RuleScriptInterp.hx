@@ -562,18 +562,41 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 	override function exprReturn(e):Dynamic
 	{
-		if (!inTry && hasErrorHandler)
+		if (!inTry)
+		{
 			try
 			{
 				return super.exprReturn(e);
 			}
 			catch (exception:haxe.Exception)
 			{
-				errorHandler(exception);
+				#if hscriptPos
+				var pos = posInfos();
+				@:privateAccess
+				if (pos != null && pos.lineNumber > 0 && !Std.isOfType(exception.unwrap(), hscript.Expr.Error))
+				{
+					if (exception.message.indexOf('(at ') == -1) {
+						final msg = exception.message + ' (at ' + pos.fileName + ':' + pos.lineNumber + ')';
+						exception = new haxe.Exception(msg, exception.previous != null ? exception.previous : exception);
+					}
+				}
+				#end
+
+				if (hasErrorHandler)
+				{
+					errorHandler(exception);
+					return null;
+				}
+				else
+				{
+					throw exception;
+				}
 			}
+		}
 		else
+		{
 			return super.exprReturn(e);
-		return null;
+		}
 	}
 
 	override public function expr(expr:Expr):Dynamic
@@ -1113,7 +1136,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		{
 			var prop:Dynamic = Reflect.getProperty(cl, f);
 			if (prop != null)
-				return Tools.usingFunction.bind(o, prop, _, _, _, _, _, _, _, _);
+				return Tools.createUsingFunction(o, prop);
 		}
 
 		return null;
@@ -1424,29 +1447,9 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 	function set_errorHandler(v:haxe.Exception->Void):haxe.Exception->Void
 	{
 		hasErrorHandler = v != null;
-
-		if (v != null)
-		{
-			errorHandler = (exception:haxe.Exception) ->
-			{
-				#if hscriptPos
-				var pos = posInfos();
-				@:privateAccess
-				if (pos != null && pos.lineNumber > 0 && !Std.isOfType(exception.unwrap(), hscript.Expr.Error))
-				{
-					final msg = exception.message + ' (at ' + pos.fileName + ':' + pos.lineNumber + ')';
-					exception = new haxe.Exception(msg, exception.previous != null ? exception.previous : exception);
-				}
-				#end
-
-				v(exception);
-			};
-		}
-		else
-		{
-			errorHandler = null;
-		}
-
+		
+		errorHandler = v; 
+		
 		return v;
 	}
 
