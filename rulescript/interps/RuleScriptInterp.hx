@@ -308,7 +308,8 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		{
 			case EIdent(id):
 				var v = expr(e2);
-				if (id == "this" && superInstance != null && Std.isOfType(superInstance, rulescript.types.ScriptedAbstract.ScriptedAbstractInstance)) {
+				if (id == "this" && superInstance != null && Std.isOfType(superInstance, rulescript.types.ScriptedAbstract.ScriptedAbstractInstance)) 
+				{
 					cast(superInstance, rulescript.types.ScriptedAbstract.ScriptedAbstractInstance).value = v;
 					return v;
 				}
@@ -316,7 +317,14 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 				final l:Dynamic = locals.get(id);
 
 				if (strictMode) {
-					if (l == null && !variables.exists(id) && !finalVariables.exists(id) &&
+					var isScriptClassField = false;
+					if (scriptName != null) {
+						final cl = RuleScriptedClassUtil.getClass(scriptName);
+						if (cl?.variableExists(id))
+							isScriptClassField = true;
+					}
+
+					if (l == null && !variables.exists(id) && !finalVariables.exists(id) && !isScriptClassField &&
 						(context == null || (!context.staticVariables.exists(id) && !context.publicVariables.exists(id))) &&
 						(superInstance == null || (!superFields.contains(id) && !superFields.contains('set_' + id)))) 
 					{
@@ -716,7 +724,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			case EVar(n, tExpr, e, global, isFinal):
 				if (tExpr != null) declaredVariableTypes.set(n, Tools.typeToString(tExpr));
 
-				if (global) {
+				if (global || depth == 0) {
 					if (context == null || (!context.staticVariables.exists(n) && !context.publicVariables.exists(n))) {
 						variables.set(n, (e == null) ? null : this.expr(e));
 						if (isFinal) finalVariables.set(n, e != null);
