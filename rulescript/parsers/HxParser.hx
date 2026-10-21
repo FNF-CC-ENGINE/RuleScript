@@ -812,6 +812,12 @@ class HScriptParser extends hscript.Parser
 		{
 			case EVar(n, _), EProp(n, _), EFunction(_, _, n) if (n != null):
 				return mk(EMeta(':contextValue', [Tools.toExpr(EIdent(isStatic ? 'static' : 'public'))], e), tokenMin, tokenMax);
+
+			case EMeta(name, args, inner) if (name == ':contextValue'):
+				final alreadyStatic = args.length > 0 && args[0].getExpr().match(EIdent('static'));
+				final combined = alreadyStatic || isStatic;
+				return mk(EMeta(':contextValue', [Tools.toExpr(EIdent(combined ? 'static' : 'public'))], inner), tokenMin, tokenMax);
+
 			default:
 				return unexpected(TId(id));
 		}

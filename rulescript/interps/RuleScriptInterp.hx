@@ -242,6 +242,10 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		if (variables.exists(path) && (Tools.isClass(variables.get(path)) || Std.isOfType(variables.get(path), ScriptedType)))
 			return variables.get(path);
 
+		final registered = RuleScriptedClassUtil.types.get(path);
+		if (registered != null)
+			return registered;
+
 		var t:Dynamic = (context != null) ? context.resolveType(path) : Tools.resolveType(path);
 		if (t == null)
 			t = ScriptedTypeUtil.resolveScript(path);
@@ -263,6 +267,13 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		final l:Dynamic = locals.get(id);
 		if (l != null)
 			return getScriptProp(l.r);
+
+		if (context != null) {
+			if (context.staticVariables.exists(id))
+				return getScriptProp(context.staticVariables.get(id));
+			if (context.publicVariables.exists(id))
+				return getScriptProp(context.publicVariables.get(id));
+		}
 
 		var v:Dynamic = getScriptProp(variables.get(id));
 
@@ -547,10 +558,14 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 		if (superInstance != null && (superFields.contains(name) || superFields.contains('set_' + name)))
 			Reflect.setProperty(superInstance, name, v);
-		else if (context != null && context.staticVariables.exists(name))
+		else if (context != null && context.staticVariables.exists(name)) {
 			context.staticVariables.set(name, v);
-		else if (context != null && context.publicVariables.exists(name))
+			variables.set(name, v);
+		}
+		else if (context != null && context.publicVariables.exists(name)) {
 			context.publicVariables.set(name, v);
+			variables.set(name, v);
+		}
 		else
 		{
 			final cl = RuleScriptedClassUtil.getClass(scriptName);

@@ -207,7 +207,7 @@ abstract Access(RuleScriptedClass)
 		init();
 		var vars:Map<String, Dynamic> = [];
 		for (k => v in interp.access.getVariables()) vars.set(k, v);
-		
+
 		if (module.context != null) {
 			for (k => v in module.context.staticVariables) vars.set(k, v);
 			for (k => v in module.context.publicVariables) vars.set(k, v);
@@ -218,21 +218,22 @@ abstract Access(RuleScriptedClass)
 	public function variableExists(name:String):Bool
 	{
 		init();
-		return interp.access.variableExists(name) || (module.context != null && (module.context.staticVariables.exists(name) || module.context.publicVariables.exists(name)));
+		return interp.access.variableExists(name)
+			|| (module.context != null
+				&& (module.context.staticVariables.exists(name) || module.context.publicVariables.exists(name)));
 	}
 
 	public function getVariable(name:String):Dynamic
 	{
 		init();
-		if (interp.access.variableExists(name))
-			return interp.access.getVariable(name);
-		
 		if (module.context != null) {
 			if (module.context.staticVariables.exists(name))
 				return module.context.staticVariables.get(name);
 			if (module.context.publicVariables.exists(name))
 				return module.context.publicVariables.get(name);
 		}
+		if (interp.access.variableExists(name))
+			return interp.access.getVariable(name);
 		return null;
 	}
 
@@ -242,10 +243,14 @@ abstract Access(RuleScriptedClass)
 		if (module.context != null) {
 			if (module.context.staticVariables.exists(name)) {
 				module.context.staticVariables.set(name, value);
+				if (interp.access.variableExists(name))
+					interp.access.setVariable(name, value);
 				return value;
 			}
 			if (module.context.publicVariables.exists(name)) {
 				module.context.publicVariables.set(name, value);
+				if (interp.access.variableExists(name))
+					interp.access.setVariable(name, value);
 				return value;
 			}
 		}
@@ -395,12 +400,19 @@ abstract Access(RuleScriptedClass)
 
 	public function getVariable(name:String):Dynamic
 	{
-		return interp.access.getVariable(name) ?? cl.getVariable(name);
+		if (interp.access.variableExists(name))
+			return interp.access.getVariable(name);
+
+		final active = RuleScriptedClassUtil.getClass(cl.toString()) ?? cl;
+		return active.getVariable(name);
 	}
 
 	public function setVariable(name:String, value:Dynamic):Dynamic
 	{
-		return cl.variableExists(name) ? cl.setVariable(name, value) : interp.access.setVariable(name, value);
+		final active = RuleScriptedClassUtil.getClass(cl.toString()) ?? cl;
+		if (active.variableExists(name))
+			return active.setVariable(name, value);
+		return interp.access.setVariable(name, value);
 	}
 
 	public function toString():String
