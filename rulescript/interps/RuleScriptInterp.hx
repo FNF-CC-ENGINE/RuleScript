@@ -24,6 +24,7 @@ import haxe.ds.StringMap;
 class RuleScriptInterp extends hscript.Interp implements IInterp
 {
 	public static var globalVariables:Map<String, Dynamic> = new Map();
+	public static var sharedStatics:Map<String, Dynamic> = new Map();
 
 	public var scriptName:String;
 	public var scriptPackage(default, set):String = '';
@@ -38,6 +39,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 	public var usings:Map<String, Dynamic> = [];
 	public var finalVariables:Map<String, Bool> = [];
 	public var declaredVariableTypes:Map<String, String> = [];
+	public var staticVarNames:Map<String, Bool> = new Map();
 
 	public var superInstance(default, set):Dynamic;
 	public var onMeta:(name:String, args:Array<Expr>, e:Expr) -> Expr;
@@ -66,6 +68,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		typePaths = [];
 		finalVariables.clear();
 		declaredVariableTypes.clear();
+		staticVarNames.clear();
 
 		if (RuleScriptedClassUtil.autoWrappers != null)
 		{
@@ -79,6 +82,19 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		{
 			variables.set(key, value);
 		}
+	}
+
+	public static function resetStatics(?scope:String):Void 
+	{
+		if (scope == null) 
+		{
+			sharedStatics.clear();
+			return;
+		}
+
+		final prefix = scope + '.';
+		final keys = [for (k in sharedStatics.keys()) if (StringTools.startsWith(k, prefix)) k];
+		for (k in keys) sharedStatics.remove(k);
 	}
 
 	override public function posInfos():haxe.PosInfos
@@ -263,6 +279,15 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 		if (id == 'super' && superInstance != null)
 			return superInstance;
+
+		if (staticVarNames.exists(id)) {
+			final key = _makeStaticKey(id);
+			if (sharedStatics.exists(key)) {
+				final v = sharedStatics.get(key);
+				variables.set(id, v);
+				return v;
+			}
+		}
 
 		final l:Dynamic = locals.get(id);
 		if (l != null)
@@ -566,6 +591,10 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			context.publicVariables.set(name, v);
 			variables.set(name, v);
 		}
+		else if (staticVarNames.exists(name) && staticVarNames.get(name)) {
+			sharedStatics.set(_makeStaticKey(name), v);
+			variables.set(name, v);
+		}
 		else
 		{
 			final cl = RuleScriptedClassUtil.getClass(scriptName);
@@ -680,35 +709,41 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			case EMeta(n, args, e):
 				return switch (n)
 				{
-					case ':contextValue' if (context != null):
+					case ':contextValue':
 						var isFunction:Bool = false;
-
-						final n:Null<String> = switch (Tools.getExpr(e))
-						{
-							case EFunction(_, _, n):
-								isFunction = true;
-								n;
+						final n:Null<String> = switch (Tools.getExpr(e)) {
+							case EFunction(_, _, n): isFunction = true; n;
 							case EProp(n, _), EVar(n, _): n;
 							default: null;
 						};
 
 						final isStatic:Bool = args.length > 0 && args[0].getExpr().match(EIdent('static'));
 
-						if (isFunction && depth == 0)
-						{
-							return (isStatic ? context.staticVariables : context.publicVariables)[n] = this.expr(e);
-						}
-						else if (depth == 0)
-						{
-							this.expr(e);
-							(isStatic ? context.staticVariables : context.publicVariables).set(n, resolve(n));
-						}
-						else
-						{
-							this.expr(e);
+						if (context != null) {
+							if (isFunction && depth == 0) {
+								return (isStatic ? context.staticVariables : context.publicVariables)[n] = this.expr(e);
+							} else if (depth == 0) {
+								this.expr(e);
+								(isStatic ? context.staticVariables : context.publicVariables).set(n, resolve(n));
+							} else {
+								this.expr(e);
+							}
+							return null;
 						}
 
-						null;
+						if (isStatic && depth == 0 && n != null) {
+							final key = _makeStaticKey(n);
+							if (sharedStatics.exists(key)) {
+								variables.set(n, sharedStatics.get(key));
+							} else {
+								this.expr(e);
+								sharedStatics.set(key, variables.get(n));
+							}
+							staticVarNames.set(n, true);
+							return null;
+						}
+
+						return this.expr(e);
 					case ':multiCatch':
 						final errInfo = locals.get("__err__");
 						final err = errInfo?.r ?? null;
@@ -1475,6 +1510,9 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		
 		return v;
 	}
+
+	inline function _makeStaticKey(n:String):String
+    	return '${scriptName ?? "<global>"}.$n';
 
 	@:noCompletion
 	public var skipNextRestore:Bool = false;

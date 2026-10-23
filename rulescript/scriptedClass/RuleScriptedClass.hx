@@ -3,6 +3,7 @@ package rulescript.scriptedClass;
 import hscript.Expr.ClassDecl;
 import rulescript.RuleScript.IInterp;
 import rulescript.Tools.TypePath;
+import rulescript.interps.RuleScriptInterp;
 import rulescript.types.ScriptedModule;
 import rulescript.types.ScriptedType;
 
