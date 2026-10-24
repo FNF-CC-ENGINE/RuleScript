@@ -273,7 +273,8 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 	{
 		if (id == 'this') 
 		{
-			if (superInstance != null) return superInstance;
+			if (superInstance != null) 
+				return superInstance;
 
 			if (variables.exists('this'))
 			{
