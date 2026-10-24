@@ -70,14 +70,6 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		declaredVariableTypes.clear();
 		staticVarNames.clear();
 
-		if (RuleScriptedClassUtil.autoWrappers != null)
-		{
-			for (nativeName => wrapperClass in RuleScriptedClassUtil.autoWrappers)
-			{
-				variables.set(nativeName, wrapperClass);
-			}
-		}
-
 		for (key => value in globalVariables)
 		{
 			variables.set(key, value);
@@ -257,10 +249,6 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 		if (variables.exists(path) && (Tools.isClass(variables.get(path)) || Std.isOfType(variables.get(path), ScriptedType)))
 			return variables.get(path);
-
-		final registered = RuleScriptedClassUtil.types.get(path);
-		if (registered != null)
-			return registered;
 
 		var t:Dynamic = (context != null) ? context.resolveType(path) : Tools.resolveType(path);
 		if (t == null)
@@ -1259,15 +1247,20 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 	override function fcall(o:Dynamic, f:String, args:Array<Dynamic>):Dynamic
 	{
-		if (o == superInstance) 
+		if (o == superInstance)
 		{
 			final nativeSuper = Reflect.field(o, '__super_' + f);
-			if (nativeSuper != null) return call(o, nativeSuper, args);
-			
-			final localSuper = locals.get('__super_' + f);
-			if (localSuper != null && localSuper.r != null) return call(o, localSuper.r, args);
+			if (nativeSuper != null)
+				return call(o, nativeSuper, args);
+
+			final superKey = '__super_' + f;
+			if (access?.variableExists(superKey))
+			{
+				final runtimeSuper = getScriptProp(access.getVariable(superKey));
+				if (runtimeSuper != null)
+					return call(o, runtimeSuper, args);
+			}
 		}
-		
 		return super.fcall(o, f, args);
 	}
 

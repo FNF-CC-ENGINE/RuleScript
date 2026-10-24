@@ -11,6 +11,39 @@ import rulescript.macro.MacroTools;
 class RuleScriptedClassMacro
 {
 	static var aliasMap:Map<String, haxe.macro.Type> = [];
+	static var onGenRegistered:Bool = false;
+
+	static function ensureOnGenerate():Void
+	{
+		if (onGenRegistered) return;
+		onGenRegistered = true;
+
+		Context.onGenerate(function(allTypes) {
+			final entries:Array<Array<Dynamic>> = [];
+
+			for (t in allTypes) switch (t) {
+				case TInst(c, _):
+					final cls = c.get();
+					if (!cls.meta.has(':ruleScriptedClass')) continue;
+
+					final superCls = cls.superClass?.t.get();
+					if (superCls == null) continue;
+
+					final fullPath = (superCls.pack.length > 0 ? superCls.pack.join('.') + '.' : '') + superCls.name;
+					final shortName = superCls.name;
+					final classPath = (cls.pack.length > 0 ? cls.pack.join('.') + '.' : '') + cls.name;
+					final strict = cls.meta.has(':strictScriptedConstructor') || cls.meta.has(':strictConstructor');
+
+					entries.push([fullPath, classPath, strict]);
+					if (fullPath != shortName)
+						entries.push([shortName, classPath, strict]);
+				default:
+			}
+
+			Context.addResource('RuleScript_AutoWrappers',
+				haxe.io.Bytes.ofString(haxe.Serializer.run(entries)));
+		});
+	}
 
 	public static macro function build():Array<Field>
 	{
@@ -116,12 +149,8 @@ class RuleScriptedClassMacro
 		for (name => func in functions)
 			fields.push({ name: name, access: [APublic], kind: FFun(MacroTools.toFunction(func)), pos: pos, meta: (name == 'get___rulescript_type') ? [{name: ':noCompletion', pos: pos}] : [] });
 
-		var localClassName = curType.name;
-		var nativeClassName = curType.superClass.t.get().name;
-
-		fields.push({
-			name: '__init__', access: [AStatic], kind: FFun({ args: [], ret: macro :Void, expr: macro { rulescript.scriptedClass.RuleScriptedClassUtil.registerAutoWrapper($v{nativeClassName}, $i{localClassName}); } }), pos: pos
-		});
+		curType.meta.add(':ruleScriptedClass', [], pos);
+		ensureOnGenerate();
 
 		return fields;
 	}
@@ -210,9 +239,25 @@ class RuleScriptedClassMacro
 			};
 
 			var superExpr = if (returnsVoid) macro {
-				super.$fieldName($a{fieldArgs});
+				if (__rulescript != null && __rulescript.access != null
+					&& __rulescript.access.variableExists('__super_' + $v{fieldName}))
+				{
+					__rulescript.access.getVariable('__super_' + $v{fieldName})($a{fieldArgs});
+				}
+				else
+				{
+					super.$fieldName($a{fieldArgs});
+				}
 			} else macro {
-				return cast super.$fieldName($a{fieldArgs});
+				if (__rulescript != null && __rulescript.access != null
+					&& __rulescript.access.variableExists('__super_' + $v{fieldName}))
+				{
+					return cast __rulescript.access.getVariable('__super_' + $v{fieldName})($a{fieldArgs});
+				}
+				else
+				{
+					return cast super.$fieldName($a{fieldArgs});
+				}
 			};
 
 			return {

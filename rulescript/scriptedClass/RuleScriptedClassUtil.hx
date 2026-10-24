@@ -1,6 +1,7 @@
 package rulescript.scriptedClass;
 
 import hscript.Expr;
+import hscript.Expr.FieldKind;
 import haxe.io.Path;
 import rulescript.interps.RuleScriptInterp;
 import rulescript.scriptedClass.RuleScriptedClass.ScriptedClass;
@@ -25,7 +26,35 @@ class RuleScriptedClassUtil
 {
 	public static var types:Map<String, ScriptedClassType> = [];
 	public static var buildBridge:(typePath:String, superInstance:Dynamic) -> RuleScript;
-	public static var autoWrappers:Map<String, Dynamic>;
+
+	static var _autoWrappers:Map<String, Dynamic> = null;
+
+	public static var autoWrappers(get, never):Map<String, Dynamic>;
+
+	static function get_autoWrappers():Map<String, Dynamic>
+	{
+		if (_autoWrappers != null) return _autoWrappers;
+		_autoWrappers = new Map();
+
+		try
+		{
+			final data = haxe.Resource.getString('RuleScript_AutoWrappers');
+			if (data == null) return _autoWrappers;
+
+			final entries:Array<Dynamic> = haxe.Unserializer.run(data);
+			for (entry in entries)
+			{
+				final superPath:String = entry[0];
+				final classPath:String = entry[1];
+				final cls:Dynamic = Type.resolveClass(classPath);
+				if (cls != null)
+					_autoWrappers.set(superPath, cls);
+			}
+		}
+		catch (e:Dynamic) {}
+
+		return _autoWrappers;
+	}
 
 	public static var importHxCache:Map<String, Array<hscript.Expr.ModuleDecl>> = new Map();
 
@@ -34,13 +63,13 @@ class RuleScriptedClassUtil
 
 	public static function registerAutoWrapper(nativeName:String, wrapperClass:Dynamic):Void
 	{
-		autoWrappers ??= new Map<String, Dynamic>();
-		autoWrappers.set(nativeName, wrapperClass);
+		get_autoWrappers();
+		_autoWrappers.set(nativeName, wrapperClass);
 	}
 
 	public static function getImportDecls(targetFilePath:String):Array<hscript.Expr.ModuleDecl>
 	{
-		if (targetFilePath == null || targetFilePath.length == 0 || fileExists == null) 
+		if (targetFilePath == null || targetFilePath.length == 0 || fileExists == null)
 			return [];
 
 		final normalized = Path.normalize(targetFilePath).split('\\').join('/');
@@ -113,7 +142,7 @@ class RuleScriptedClassUtil
 
 	public static function buildRuleScript(typePath:String, superInstance:Dynamic):RuleScript
 	{
-		if (buildBridge != null) 
+		if (buildBridge != null)
 			return buildBridge(typePath, superInstance);
 
 		final type:ScriptedClassType = types[typePath] ?? ScriptedTypeUtil.resolveScript(typePath);
@@ -144,7 +173,7 @@ class RuleScriptedClassUtil
 			var nativeFields = Type.getInstanceFields(cast cl.nativeClass);
 			if (nativeFields != null) for (f in nativeFields) superFields.push(f);
 		}
-		
+
 		var currentSuper = cl.superClass;
 		while (currentSuper != null && currentSuper is ScriptedClass) {
 			final sc:ScriptedClass = cast currentSuper;
@@ -157,7 +186,7 @@ class RuleScriptedClassUtil
 
 		if (cl.impl?.fields != null) {
 			for (field in cl.impl.fields) {
-				if (field.name == "new" || field.access.contains(AStatic)) 
+				if (field.name == "new" || field.access.contains(AStatic))
 					continue;
 
 				final isOverride = field.access.contains(AOverride);
@@ -169,8 +198,35 @@ class RuleScriptedClassUtil
 			}
 		}
 
-		var exprList:Array<Expr> = [];
-		for (targetClass in list) {
+		for (i in 0...list.length)
+		{
+			final targetClass:ScriptedClass = list[i];
+
+			if (i > 0 && targetClass.impl?.fields != null)
+			{
+				for (field in targetClass.impl.fields)
+				{
+					if (field.access.contains(AStatic)) continue;
+					switch (field.kind)
+					{
+						case KFunction(_):
+							final superName = '__super_' + field.name;
+							try
+							{
+								if (!rulescript.access.variableExists(superName)
+									&& rulescript.access.variableExists(field.name))
+								{
+									final parentFn = rulescript.access.getVariable(field.name);
+									if (parentFn != null)
+										rulescript.access.setVariable(superName, parentFn);
+								}
+							}
+							catch (e:Dynamic) {}
+						default:
+					}
+				}
+			}
+
 			if (rulescript.interp is RuleScriptInterp)
 				applyImportsFromDecls(cast rulescript.interp, targetClass.module.sharedDecls);
 
@@ -183,10 +239,9 @@ class RuleScriptedClassUtil
 			final subExprs:Array<Expr> = switch (exprs.getExpr()) {
 				case EBlock(e): e;
 				case e: [exprs];
-			}
-			for (expr in subExprs) exprList.push(expr);
-		}
+			};
 
-		rulescript.execute(EBlock(exprList).toExpr());
+			rulescript.execute(EBlock(subExprs).toExpr());
+		}
 	}
 }

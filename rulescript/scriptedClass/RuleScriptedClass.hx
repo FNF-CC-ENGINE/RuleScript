@@ -1,6 +1,9 @@
 package rulescript.scriptedClass;
 
+import hscript.Expr;
 import hscript.Expr.ClassDecl;
+import hscript.Expr.FieldKind;
+
 import rulescript.RuleScript.IInterp;
 import rulescript.Tools.TypePath;
 import rulescript.interps.RuleScriptInterp;
@@ -175,10 +178,26 @@ abstract Access(RuleScriptedClass)
 			function(args) { return new ScriptedInstance(this, args); }
 		else if (nativeClass != null)
 		{
-			var type = toString();
-			var strict = Reflect.getProperty(nativeClass, '__rulescript_strict');
+			final type = toString();
 
-			if (strict)
+			var wrapperStrict:Null<Bool> = null;
+			try
+			{
+				final v = Reflect.field(nativeClass, '__rulescript_strict');
+				if (v != null) wrapperStrict = v == true;
+			}
+			catch (e:Dynamic) {}
+
+			if (wrapperStrict == null)
+			{
+				args -> #if rulescript_use_hl_fixes
+					Tools.__hl_createInstance(nativeClass, args);
+				#else
+					Type.createInstance(nativeClass, args);
+				#end
+			}
+			else if (wrapperStrict)
+			{
 				args ->
 				{
 					var strictArgs:Array<Dynamic> = [type];
@@ -189,13 +208,16 @@ abstract Access(RuleScriptedClass)
 					Type.createInstance(nativeClass, strictArgs);
 					#end
 				}
+			}
 			else
+			{
 				args ->
 					#if rulescript_use_hl_fixes
 					Tools.__hl_createInstance(nativeClass, [type, args]);
 					#else
 					Type.createInstance(nativeClass, [type, args]);
 					#end
+			}
 		}
 		else
 			(_) -> throw toString() + ' cannot be constructed';
@@ -265,37 +287,57 @@ abstract Access(RuleScriptedClass)
 		return CLASS;
 	}
 
+	public function hasScriptFunction(name:String):Bool
+	{
+		if (impl == null || impl.fields == null) return false;
+		for (field in impl.fields)
+		{
+			if (field.name == name && !field.access.contains(AStatic))
+			{
+				switch (field.kind)
+				{
+					case KFunction(_): return true;
+					default:
+				}
+			}
+		}
+		return false;
+	}
+
+	public function getParentScriptedClass():Null<ScriptedClass>
+	{
+		try { init(); } catch (e:Dynamic) { return null; }
+		return (superClass is ScriptedClass) ? cast superClass : null;
+	}
+
 	public function createInstance(args:Array<Dynamic>):Dynamic
 	{
 		init();
 
-		if (impl?.extend != null) 
+		if (impl?.extend != null)
 		{
 			final extendName = rulescript.Tools.typeToString(impl.extend);
 			final shortName = extendName.split(".").pop();
-					
-			if (RuleScriptedClassUtil.autoWrappers != null) 
+
+			final wrapperClass = RuleScriptedClassUtil.autoWrappers.get(extendName)
+							 ?? RuleScriptedClassUtil.autoWrappers.get(shortName);
+
+			if (wrapperClass != null)
 			{
-				final wrapperClass = RuleScriptedClassUtil.autoWrappers.get(extendName) 
-								?? RuleScriptedClassUtil.autoWrappers.get(shortName);
-								
-				if (wrapperClass != null) 
-				{
-					final isStrict:Bool = Reflect.field(wrapperClass, "__rulescript_strict") == true;
-					final scriptName = this.toString(); 
-					
-					try {
-						if (isStrict) {
-							final wrapperArgs:Array<Dynamic> = [scriptName];
-							if (args != null) for (a in args) wrapperArgs.push(a);
-							return Type.createInstance(wrapperClass, wrapperArgs);
-						} else {
-							return Type.createInstance(wrapperClass, [scriptName, args ?? []]);
-						}
-					} catch(e:Dynamic) {
-						trace('Scripted Class Error: Failed to create wrapper for "' + shortName + '": ' + e);
-						return null;
+				final isStrict:Bool = Reflect.field(wrapperClass, "__rulescript_strict") == true;
+				final scriptName = this.toString();
+
+				try {
+					if (isStrict) {
+						final wrapperArgs:Array<Dynamic> = [scriptName];
+						if (args != null) for (a in args) wrapperArgs.push(a);
+						return Type.createInstance(wrapperClass, wrapperArgs);
+					} else {
+						return Type.createInstance(wrapperClass, [scriptName, args ?? []]);
 					}
+				} catch(e:Dynamic) {
+					trace('Scripted Class Error: Failed to create wrapper for "' + shortName + '": ' + e);
+					return null;
 				}
 			}
 		}
@@ -309,7 +351,7 @@ abstract Access(RuleScriptedClass)
 		}
 
 		initialize(args ?? []);
-		return interp.access.superInstance ?? this; 
+		return interp.access.superInstance ?? this;
 	}
 
 	@:access(rulescript.RuleScriptAccess)
@@ -339,7 +381,7 @@ abstract Access(RuleScriptedClass)
 		interp = RuleScript.createInterp();
 		interp.access.scriptName = cl.toString();
 
-		final list:Array<Dynamic> = [];
+		final list:Array<ScriptedClass> = [];
 		var currentClass:Dynamic = cl;
 
 		while (currentClass != null)
@@ -358,8 +400,35 @@ abstract Access(RuleScriptedClass)
 			}
 		}
 
-		for (targetClass in list)
+		for (i in 0...list.length)
 		{
+			final targetClass = list[i];
+
+			if (i > 0 && targetClass.impl?.fields != null)
+			{
+				for (field in targetClass.impl.fields)
+				{
+					if (field.access.contains(AStatic)) continue;
+					switch (field.kind)
+					{
+						case KFunction(_):
+							final superName = '__super_' + field.name;
+							try
+							{
+								if (!interp.access.variableExists(superName)
+									&& interp.access.variableExists(field.name))
+								{
+									final parentFn = interp.access.getVariable(field.name);
+									if (parentFn != null)
+										interp.access.setVariable(superName, parentFn);
+								}
+							}
+							catch (e:Dynamic) {}
+						default:
+					}
+				}
+			}
+
 			if (interp is RuleScriptInterp)
 				RuleScriptedClassUtil.applyImportsFromDecls(cast interp, targetClass.module.sharedDecls);
 
@@ -414,6 +483,25 @@ abstract Access(RuleScriptedClass)
 		if (active.variableExists(name))
 			return active.setVariable(name, value);
 		return interp.access.setVariable(name, value);
+	}
+
+	public function hasScriptFunction(name:String):Bool
+	{
+		var current:Dynamic = cl;
+		while (current != null)
+		{
+			if (current is ScriptedClass)
+			{
+				final sc:ScriptedClass = cast current;
+				if (sc.hasScriptFunction(name)) return true;
+				current = sc.superClass;
+			}
+			else
+			{
+				break;
+			}
+		}
+		return false;
 	}
 
 	public function toString():String
