@@ -274,7 +274,14 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		if (id == 'this') 
 		{
 			if (superInstance != null) return superInstance;
-			return this; 
+
+			if (variables.exists('this'))
+			{
+				final v:Dynamic = variables.get('this');
+				if (v != this) return getScriptProp(v);
+			}
+
+			return this;
 		}
 
 		if (id == 'super' && superInstance != null)
