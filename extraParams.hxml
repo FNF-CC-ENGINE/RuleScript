@@ -25,3 +25,5 @@
 --macro addMetadata('@:build(rulescript.macro.ExprMacro.buildMacroDefaults())', 'hscript.Macro')
 
 --macro rulescript.macro.MacroTools.checkHScript()
+
+--macro rulescript.macro.RuleScriptInlineMacro.init()

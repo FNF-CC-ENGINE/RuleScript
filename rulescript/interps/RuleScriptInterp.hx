@@ -44,6 +44,8 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 	public var superInstance(default, set):Dynamic;
 	public var onMeta:(name:String, args:Array<Expr>, e:Expr) -> Expr;
 	public var isSuperCall:Bool = false;
+	public var isBeforeSuper:Bool = false;
+	public var hasCalledSuper:Bool = false;
 
 	public var hasErrorHandler:Bool = false;
 	public var errorHandler(default, set):haxe.Exception->Void;
@@ -69,6 +71,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		finalVariables.clear();
 		declaredVariableTypes.clear();
 		staticVarNames.clear();
+		hasCalledSuper = false;
 
 		for (key => value in globalVariables)
 		{
@@ -107,7 +110,8 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		
 		var me = this;
 		
-		function resolveOp(op:String, v1:Dynamic, v2:Dynamic):Dynamic {
+		function resolveOp(op:String, v1:Dynamic, v2:Dynamic):Dynamic 
+		{
 			if (v1 is rulescript.types.ScriptedAbstract.ScriptedAbstractInstance) {
 				final inst = cast(v1, rulescript.types.ScriptedAbstract.ScriptedAbstractInstance);
 				if (inst.impl.hasOperator(op)) return inst.impl.callOperator(op, inst, v2, false);
@@ -261,6 +265,9 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 	{
 		if (id == 'this') 
 		{
+			if (strictMode && isBeforeSuper)
+				throw new haxe.Exception('Strict Mode Error: Cannot use "this" before calling super()');
+
 			if (superInstance != null) 
 				return superInstance;
 
@@ -276,9 +283,12 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		if (id == 'super' && superInstance != null)
 			return superInstance;
 
-		if (staticVarNames.exists(id)) {
+		if (staticVarNames.exists(id)) 
+		{
 			final key = _makeStaticKey(id);
-			if (sharedStatics.exists(key)) {
+
+			if (sharedStatics.exists(key)) 
+			{
 				final v = sharedStatics.get(key);
 				variables.set(id, v);
 				return v;
@@ -289,7 +299,8 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		if (l != null)
 			return getScriptProp(l.r);
 
-		if (context != null) {
+		if (context != null) 
+		{
 			if (context.staticVariables.exists(id))
 				return getScriptProp(context.staticVariables.get(id));
 			if (context.publicVariables.exists(id))
@@ -311,20 +322,31 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			if (v == null && superInstance != null)
 				v = get(superInstance, id);
 
-			if (v == null && scriptName != null) {
+			if (v == null && scriptName != null) 
+			{
 				final cl = RuleScriptedClassUtil.getClass(scriptName);
-				if (cl != null && cl.variableExists(id))
+				if (cl?.variableExists(id))
 					v = cl.getVariable(id);
 			}
 
-			if (v == null) {
+			if (v == null) 
+			{
 				v = resolveType(id);
 				if (v != null)
 					variables.set(id, v);
 			}
 			
-			if (v == null)
+			if (v == null) 
+			{
+				if (superInstance != null && (superFields.contains(id) || superFields.contains('get_' + id) || superFields.contains('set_' + id) || Reflect.hasField(superInstance, id))) {
+					if (strictMode && isBeforeSuper)
+						throw new haxe.Exception('Strict Mode Error: Cannot access class field or method "$id" before calling super()');
+
+					return Reflect.getProperty(superInstance, id);
+				}
+
 				error(EUnknownVariable(id));
+			}
 		}
 
 		return v;
@@ -350,7 +372,8 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 				if (strictMode) {
 					var isScriptClassField = false;
-					if (scriptName != null) {
+					if (scriptName != null) 
+					{
 						final cl = RuleScriptedClassUtil.getClass(scriptName);
 						if (cl?.variableExists(id))
 							isScriptClassField = true;
@@ -365,7 +388,8 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 					if (declaredVariableTypes.exists(id)) {
 						final expected = declaredVariableTypes.get(id);
-						if (!checkRuntimeType(v, expected)) {
+						if (!checkRuntimeType(v, expected)) 
+						{
 							final got = Type.getClassName(Type.getClass(v)) ?? Std.string(Type.typeof(v));
 							final pos = posInfos();
 							final posStr = pos != null ? ' [Line ' + pos.lineNumber + ']' : '';
@@ -378,14 +402,16 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 					setVar(id, v);
 				else
 				{
-					if (l.isFinal) {
+					if (l.isFinal) 
+					{
 						if (l.isInitialized) throw new haxe.Exception('Cannot reassign final variable: ' + id);
 						l.isInitialized = true;
 					}
 					
 					if (l.r is Property)
 						cast(l.r, Property).value = v;
-					else {
+					else 
+					{
 						l.r = v;
 
 						if (context != null)
@@ -402,6 +428,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 			case ETypeVarPath(_path):
 				var v = expr(e2);
+
 				final path:Array<String> = _path.copy();
 				final f:String = path.pop();
 
@@ -448,7 +475,8 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 					setVar(id, v);
 				else
 				{
-					if (l.isFinal) {
+					if (l.isFinal) 
+					{
 						if (l.isInitialized) throw new haxe.Exception('Cannot reassign final variable: ' + id);
 						l.isInitialized = true;
 					}
@@ -570,7 +598,8 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 	override function setVar(name:String, v:Dynamic)
 	{
-		if (finalVariables.exists(name)) {
+		if (finalVariables.exists(name)) 
+		{
 			if (finalVariables.get(name))
 				throw new haxe.Exception('Cannot reassign global final variable: ' + name);
 			else
@@ -579,22 +608,26 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 		if (superInstance != null && (superFields.contains(name) || superFields.contains('set_' + name)))
 			Reflect.setProperty(superInstance, name, v);
-		else if (context != null && context.staticVariables.exists(name)) {
+		else if (context != null && context.staticVariables.exists(name)) 
+		{
 			context.staticVariables.set(name, v);
 			variables.set(name, v);
 		}
-		else if (context != null && context.publicVariables.exists(name)) {
+		else if (context != null && context.publicVariables.exists(name)) 
+		{
 			context.publicVariables.set(name, v);
 			variables.set(name, v);
 		}
-		else if (staticVarNames.exists(name) && staticVarNames.get(name)) {
+		else if (staticVarNames.exists(name) && staticVarNames.get(name)) 
+		{
 			sharedStatics.set(_makeStaticKey(name), v);
 			variables.set(name, v);
 		}
 		else
 		{
 			final cl = RuleScriptedClassUtil.getClass(scriptName);
-			if (cl != null && cl.variableExists(name)) {
+			if (cl?.variableExists(name)) 
+			{
 				cl.setVariable(name, v);
 				return;
 			}
@@ -619,13 +652,13 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			catch (exception:haxe.Exception)
 			{
 				#if hscriptPos
-				var pos = posInfos();
+				final pos = posInfos();
 				@:privateAccess
-				if (pos != null && pos.lineNumber > 0 && !Std.isOfType(exception.unwrap(), hscript.Expr.Error))
+				if (pos?.lineNumber > 0 && !Std.isOfType(exception.unwrap(), hscript.Expr.Error))
 				{
 					if (exception.message.indexOf('(at ') == -1) {
 						final msg = exception.message + ' (at ' + pos.fileName + ':' + pos.lineNumber + ')';
-						exception = new haxe.Exception(msg, exception.previous != null ? exception.previous : exception);
+						exception = new haxe.Exception(msg, exception.previous ?? exception);
 					}
 				}
 				#end
@@ -665,12 +698,11 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 				{
 					var name = alias ?? path.split('.').pop();
 
-					var t:Dynamic = resolveType(path);
-
+					final t:Dynamic = resolveType(path);
 					if (t == null)
 						error(ECustom('Type not found : $path'));
 
-					var value = if (func != null && Tools.isClass(t))
+					final value = if (func != null && Tools.isClass(t))
 					{
 						name = alias ?? func;
 						Reflect.getProperty(t, func);
@@ -694,8 +726,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 					}
 				}
 			case EUsing(path):
-				var t:Dynamic = resolveType(path);
-
+				final t:Dynamic = resolveType(path);
 				if (t == null)
 					error(ECustom('Type not found : $path'));
 
@@ -705,6 +736,24 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			case EMeta(n, args, e):
 				return switch (n)
 				{
+					case ':beforeSuper':
+						final old = isBeforeSuper;
+						isBeforeSuper = true;
+
+						this.hasCalledSuper = true;
+
+						final res = this.expr(e);
+						isBeforeSuper = old;
+
+						return res;
+					case ':afterSuper':
+						final old = isBeforeSuper;
+						isBeforeSuper = false;
+
+						final res = this.expr(e);
+						isBeforeSuper = old;
+
+						return res;
 					case ':contextValue':
 						var isFunction:Bool = false;
 						final n:Null<String> = switch (Tools.getExpr(e)) {
@@ -715,7 +764,8 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 						final isStatic:Bool = args.length > 0 && args[0].getExpr().match(EIdent('static'));
 
-						if (context != null) {
+						if (context != null) 
+						{
 							if (isFunction && depth == 0) {
 								return (isStatic ? context.staticVariables : context.publicVariables)[n] = this.expr(e);
 							} else if (depth == 0) {
@@ -777,11 +827,14 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 					}
 				} else {
 					declared.push({n: n, old: locals.get(n)});
-					var ref:Dynamic = {r: (e == null) ? null : this.expr(e)};
-					if (isFinal) {
+
+					final ref:Dynamic = {r: (e == null) ? null : this.expr(e)};
+					if (isFinal) 
+					{
 						ref.isFinal = true;
 						ref.isInitialized = e != null;
 					}
+
 					locals.set(n, ref);
 				}
 				return null;
@@ -789,20 +842,23 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			case EProp(n, g, s, type, e, global):
 				if (type != null) declaredVariableTypes.set(n, Tools.typeToString(type));
 
-				var prop = createScriptProperty(n, g, s, type);
+				final prop = createScriptProperty(n, g, s, type);
 				if (global) variables.set(n, prop);
-				else {
+				else 
+				{
 					declared.push({n: n, old: locals.get(n)});
 					locals.set(n, {r: prop});
 				}
+
 				if (e != null) prop._lazyValue = () -> this.expr(e);
+
 				return null;
 
 			case EIdent(id):
 				return resolve(id);
 
 			case ECall(e, params):
-				var args = new Array();
+				final args = new Array();
 				for (p in params)
 				{
 					if (p.getExpr().match(EUnop('...', true, _)))
@@ -819,7 +875,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 				switch (e.getExpr())
 				{
 					case EField(e, f):
-						var obj = this.expr(e);
+						final obj = this.expr(e);
 						if (obj == null)
 							error(EInvalidAccess(f));
 						return fcall(obj, f, args);
@@ -877,6 +933,8 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 				var f = function(args:Array<Dynamic>)
 				{
+					if (name != null && name != "new") me.hasCalledSuper = true;
+
 					if (args == null)
 						args = [];
 
@@ -1069,11 +1127,17 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			case 'default':
 				DEFAULT;
 			case 'set':
-				SET(v -> call(null, resolve('set_$n'), [v]));
+				SET(v -> {
+					if (!this.hasCalledSuper) return v;
+					return call(null, resolve('set_$n'), [v]);
+				});
 			case 'null':
 				NULL;
 			case 'dynamic':
-				DYNAMIC((?v:Dynamic) -> call(null, resolve('set_$n'), [v]));
+				DYNAMIC((?v:Dynamic) -> {
+					if (!this.hasCalledSuper) return v;
+					return call(null, resolve('set_$n'), [v]);
+				});
 			case 'never':
 				NEVER;
 			default:
@@ -1142,6 +1206,9 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		if (strictMode) 
 			validateFieldAccess(o, f);
 
+		if (strictMode && isBeforeSuper && (o == this || o == superInstance || Std.isOfType(o, RuleScriptedClass)))
+			throw new haxe.Exception('Strict Mode Error: Cannot access class field or method "$f" before calling super()');
+
 		if (o == this)
 		{
 			if (variables.exists(f))
@@ -1155,12 +1222,26 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 		if (o is RuleScriptedClass)
 		{
-			var cl:RuleScriptedClass = cast(o, RuleScriptedClass);
-			if (cl.variableExists(f))
-				return getScriptProp(cl.getVariable(f));
+			final cl:RuleScriptedClass = cast(o, RuleScriptedClass);
+			if (cl.variableExists(f)) 
+			{
+				final val:Dynamic = cl.getVariable(f);
+				if (val != null) return getScriptProp(val);
+			}
 		}
 
-		var prop:Dynamic = super.get(o, f);
+		var prop:Dynamic = null;
+		try {
+			prop = Reflect.getProperty(o, f);
+		} catch (e:Dynamic) {}
+
+		if (prop == null) 
+		{
+			try {
+				prop = Reflect.field(o, f);
+			} catch (e:Dynamic) {}
+		}
+		
 		if (prop != null)
 			return getScriptProp(prop);
 
@@ -1203,6 +1284,9 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 		if (o == null)
 			error(EInvalidAccess(f));
+
+		if (strictMode && isBeforeSuper && (o == this || o == superInstance || Std.isOfType(o, RuleScriptedClass)))
+			throw new haxe.Exception('Strict Mode Error: Cannot access class field or method "$f" before calling super()');
 
 		if (o == this)
 		{
@@ -1247,6 +1331,12 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 	override function fcall(o:Dynamic, f:String, args:Array<Dynamic>):Dynamic
 	{
+		if (o == null)
+        	error(EInvalidAccess(f));
+
+		if (strictMode && isBeforeSuper && (o == this || o == superInstance || Std.isOfType(o, RuleScriptedClass)))
+			throw new haxe.Exception('Strict Mode Error: Cannot access class field or method "$f" before calling super()');
+
 		if (o == superInstance)
 		{
 			final nativeSuper = Reflect.field(o, '__super_' + f);
@@ -1261,6 +1351,33 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 					return call(o, runtimeSuper, args);
 			}
 		}
+
+		var func = get(o, f);
+		if (func != null)
+		{
+			return call(o, func, args);
+		}
+
+		var cls = Type.getClass(o);
+		while (cls != null) 
+		{
+			final className = Type.getClassName(cls);
+			final pack = className.split('.');
+			final name = pack.pop();
+			
+			final wrapperName = "rulescript._internal.classes." + (pack.length > 0 ? pack.join('.') + "." : "") + name + "_RuleScriptImpl_";
+			final wrapperCls = Type.resolveClass(wrapperName);
+			
+			if (wrapperCls != null && Reflect.hasField(wrapperCls, f)) 
+			{
+				final inlineFunc = Reflect.field(wrapperCls, f);
+				final inlineArgs = [o].concat(args);
+
+				return Reflect.callMethod(wrapperCls, inlineFunc, inlineArgs);
+			}
+			cls = Type.getSuperClass(cls);
+		}
+
 		return super.fcall(o, f, args);
 	}
 
@@ -1390,9 +1507,8 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			return checkField(Type.getSuperClass(c));
 		}
 		
-		if (!checkField(cls)) {
+		if (!checkField(cls))
 			throw new haxe.Exception('Strict Mode Error: Field "$field" does not exist on class $className');
-		}
 	}
 
 	function caseMatch(ecase:Expr, evalue:Expr, value:Dynamic):Bool
@@ -1537,44 +1653,39 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			case EFunction(params, fexpr, name, _):
 				final exprs:Array<Expr> = switch (Tools.getExpr(fexpr))
 				{
-					case EBlock(exprs):
-						exprs;
-					default:
-						[fexpr];
+					case EBlock(e): e;
+					default: [fexpr];
 				}
 
-				var preExpr:Expr = fexpr;
-				var postExpr:Expr = null;
-				var superCallArgs:Array<Expr> = null;
+				var preExprs:Array<Expr> = [];
+				var postExprs:Array<Expr> = [];
+				var superCallArgs:Array<Expr> = [];
+				var foundSuper = false;
 
 				if (exprs != null)
 				{
-					var superID:Int = 0;
-
 					for (expr in exprs)
 					{
-						switch (Tools.getExpr(expr))
+						if (!foundSuper) 
 						{
-							case ECall(e, _) if (Tools.getExpr(e).match(EIdent('super'))):
-								break;
-							default:
-								null;
+							switch (Tools.getExpr(expr))
+							{
+								case ECall(e, callParams) if (Tools.getExpr(e).match(EIdent('super'))):
+									superCallArgs = callParams;
+									foundSuper = true;
+								default:
+									preExprs.push(expr);
+							}
+						} 
+						else 
+						{
+							postExprs.push(expr);
 						}
-						superID++;
-					}
-
-					if (superID != exprs.length)
-					{
-						preExpr = Tools.toExpr(EBlock(exprs.slice(0, superID)));
-						postExpr = Tools.toExpr(EBlock(exprs.slice(superID + 1)));
-
-						superCallArgs = superID == exprs.length ? [] : switch (Tools.getExpr(exprs[superID]))
-						{
-							case ECall(_, params): params;
-							default: [];
-						};
 					}
 				}
+
+				var preExpr = Tools.toExpr(EMeta(":beforeSuper", [], Tools.toExpr(EBlock(preExprs))));
+				var postExpr = Tools.toExpr(EMeta(":afterSuper", [], Tools.toExpr(EBlock(postExprs))));
 
 				new RSInterpConstructor(superConstructor, this, params, preExpr, superCallArgs, postExpr);
 			default:
@@ -1589,8 +1700,13 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 	{
 		if (value != null)
 		{
-			var o:Class<Dynamic> = Tools.isClass(value) ? cast value : Type.getClass(value);
+			final o:Class<Dynamic> = Tools.isClass(value) ? cast value : Type.getClass(value);
 			superFields = (o != null) ? Type.getInstanceFields(o) : [];
+
+			if (value != null) {
+				for (f in Reflect.fields(value))
+					if (!superFields.contains(f)) superFields.push(f);
+			}
 		}
 
 		return superInstance = value;

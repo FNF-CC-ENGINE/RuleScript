@@ -39,7 +39,7 @@ class Property
 
 		_inProperty = true;
 
-		var v:Dynamic = switch (_get)
+		final v:Dynamic = switch (_get)
 		{
 			case DEFAULT | NULL: this.value;
 			case GET(f): f();
@@ -62,7 +62,7 @@ class Property
 
 		_inProperty = true;
 
-		var v:Dynamic = switch (_set)
+		final v:Dynamic = switch (_set)
 		{
 			case DEFAULT | NULL: this.value = v;
 			case GET(_): throw 'Custom property accessor is no longer supported, please use `set`';
@@ -80,9 +80,9 @@ class Property
 	{
 		if (_lazyValue != null)
 		{
-			var newValue = _lazyValue();
+			final newValue = _lazyValue();
 			_lazyValue = null;
-			set_value(newValue);
+			this.value = newValue;
 		}
 	}
 }
