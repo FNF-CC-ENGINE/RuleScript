@@ -41,6 +41,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 	public var declaredVariableTypes:Map<String, String> = [];
 	public var staticVarNames:Map<String, Bool> = new Map();
 
+	public var allowTypeAccess:(path:String)->Bool;
 	public var superInstance(default, set):Dynamic;
 	public var onMeta:(name:String, args:Array<Expr>, e:Expr) -> Expr;
 	public var isSuperCall:Bool = false;
@@ -51,6 +52,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 	public var errorHandler(default, set):haxe.Exception->Void;
 
 	public var context:Context;
+
 	var typePaths:Map<String, Dynamic> = [];
 
 	public function new()
@@ -248,6 +250,9 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 
 	#if rulescript_is_git_hscript override #end function resolveType(path:String):Dynamic
 	{
+		if (allowTypeAccess != null && !allowTypeAccess(path))
+			error(ECustom('Access to type or package "$path" is blacklisted.'));
+
 		if (imports.exists(path))
 			return imports.get(path);
 

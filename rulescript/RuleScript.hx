@@ -212,6 +212,11 @@ class RuleScript
 	 */
 	public var context(get, set):Context;
 
+	/**
+	 * A list of forbidden import paths.
+	 */
+	public var blacklistImports:Array<String> = [];
+
 	// i wonder what this is...
 	public function new(?interp:IInterp, ?parser:Parser, ?context:Context)
 	{
@@ -306,6 +311,20 @@ class RuleScript
 	function set_interp(v:IInterp):IInterp
 	{
 		access = v.access;
+		
+		if (Std.isOfType(v, rulescript.interps.RuleScriptInterp)) 
+		{
+			cast(v, rulescript.interps.RuleScriptInterp).allowTypeAccess = (path:String) ->
+			{
+				for (blocked in blacklistImports) 
+				{
+					if (path == blocked || StringTools.startsWith(path, blocked + ".")) 
+						return false;
+				}
+				return true;
+			};
+		}
+		
 		return interp = v;
 	}
 
