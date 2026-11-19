@@ -44,7 +44,7 @@ class CallMethodMacro
 			expr: ESwitch(macro need, [
 				for (i in 9...13)
 				{
-					var t:haxe.macro.ComplexType = TFunction([for (i in 0...i) macro :Dynamic], macro :Dynamic);
+					var t:ComplexType = TFunction([for (i in 0...i) macro :Dynamic], macro :Dynamic);
 					{
 						values: [macro $v{i}],
 						guard: null,

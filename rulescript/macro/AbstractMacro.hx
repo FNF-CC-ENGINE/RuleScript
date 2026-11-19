@@ -42,12 +42,25 @@ class AbstractMacro
 			}
 		];
 
+		var pos = Context.currentPos();
+		var mapExpr:Expr = {
+			expr: EArrayDecl(list),
+			pos: pos
+		};
+		var mapType:ComplexType = TPath({
+			pack: [],
+			name: 'Map',
+			params: [
+				TPType(TPath({pack: [], name: 'String'})),
+				TPType(TPath({pack: [], name: 'Dynamic'}))
+			]
+		});
 		final fields = Context.getBuildFields();
 		fields.push({
 			name: 'list',
 			access: [APublic, AStatic],
-			kind: FVar(macro :Map<String, Dynamic>, macro $a{list}),
-			pos: Context.currentPos()
+			kind: FVar(mapType, mapExpr),
+			pos: pos
 		});
 		return fields;
 	}
@@ -399,29 +412,57 @@ class AbstractMacro
 		var value:Expr = {
 			expr: EObjectDecl([
 				for (field in type.impl.get().statics.get())
-					if (!field.meta.has(':ignoreField') && field.name != '_new')
+					if (!field.meta.has(':ignoreField') && !field.meta.has(':impl') && field.name != '_new')
 					{
 						var isStatic:Bool = true;
 
 						switch (field.expr()?.expr)
 						{
 							case TFunction(f):
-								if (f.args[0] != null && f.args[0].v.name == 'this')
+								if (f.args[0] != null && f.args[0].v.name.startsWith('this'))
 									isStatic = false;
 							default:
 						}
 
 						if (!field.kind.match(FVar(AccCall, _)) && isStatic)
-							{
-								field: field.name,
-								expr: macro @:privateAccess $p{'${typePath.fullPath}.${field.name}'.split('.')}
-							}
+						{
+							var expr:Expr = {
+								var pos = Context.currentPos();
+								var parts = '${typePath.fullPath}.${field.name}'.split('.');
+								var cur:Expr = {expr: EConst(CIdent(parts[0])), pos: pos};
+								for (i in 1...parts.length)
+									cur = {expr: EField(cur, parts[i]), pos: pos};
+								{
+									expr: EMeta({name: ':privateAccess', params: [], pos: pos}, cur),
+									pos: pos
+								};
+							};
+
+							final valid = try {
+								Context.typeExpr(expr);
+								true;
+							} catch (_:Dynamic) false;
+
+							if (valid)
+								{
+									field: field.name,
+									expr: expr
+								}
+						}
 					}
 			]),
 			pos: Context.currentPos()
 		}
 
-		return macro $v{alias ?? typePath.fullPath} => $e{value};
+		var pos = Context.currentPos();
+		var keyExpr:Expr = {
+			expr: EConst(CString(alias ?? typePath.fullPath)),
+			pos: pos
+		};
+		return {
+			expr: EBinop(OpArrow, keyExpr, value),
+			pos: pos
+		};
 	}
 }
 #end

@@ -223,5 +223,17 @@ class ExprMacro
 
 		return fields;
 	}
+
+	public static function buildHaxe5():Array<Field>
+	{
+		return switch (Context.getLocalType())
+		{
+			case TEnum(_.get() => {name: 'ExprDef'}, _): build();
+			case TEnum(_.get() => {name: 'ModuleDecl'}, _): buildModuleDecl();
+			case TEnum(_.get() => {name: 'FieldAccess'}, _): buildFieldAccess();
+			case TEnum(_.get() => {name: 'Token'}, _): buildToken();
+			default: null;
+		}
+	}
 }
 #end

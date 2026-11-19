@@ -65,10 +65,10 @@ class RuleScriptedClassMacro
 		{
 			for (field in curType.fields.get())
 			{
-				if (!inlinedFields.contains(field.name) && field.kind.match(FMethod(MethInline)))
+				if (!inlinedFields.contains(field.name) && !field.kind.match(FMethod(MethNormal)))
 					inlinedFields.push(field.name);
 
-				if (!typefields.exists(field.name) && !field.isFinal && field.kind.match(FMethod(_)) && !inlinedFields.contains(field.name))
+				if (!typefields.exists(field.name) && !field.isFinal && field.kind.match(FMethod(MethNormal)) && !inlinedFields.contains(field.name))
 					typefields.set(field.name, field);
 			}
 			curType = curType.superClass?.t.get();

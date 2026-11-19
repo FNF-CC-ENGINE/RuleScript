@@ -11,6 +11,18 @@ class MacroTools
 {
 	public static function checkHScript():Void
 	{
+		#if (haxe >= "5.0.0")
+		try
+		{
+			final path = Context.resolvePath('hscript/Expr.hx');
+			final content = sys.io.File.getContent(path);
+			if (~/ENew\s*\([\s\S]*?\bargs\s*:/.match(content))
+				Compiler.define('rulescript_is_git_hscript');
+		}
+		catch (_:Dynamic) {}
+
+		Compiler.addGlobalMetadata('hscript', '@:build(rulescript.macro.ExprMacro.buildHaxe5())', true, true, false);
+		#else
 		final exprType:haxe.macro.Type = Context.getType(#if hscriptPos 'hscript.Expr.ExprDef' #else 'hscript.Expr' #end);
 
 		switch (exprType)
@@ -24,6 +36,7 @@ class MacroTools
 				}
 			default:
 		}
+		#end
 	}
 
 	/**

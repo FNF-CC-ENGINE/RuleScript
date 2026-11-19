@@ -601,7 +601,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		}
 	}
 
-	override function setVar(name:String, v:Dynamic)
+	override function setVar(name:String, v:Dynamic):Dynamic
 	{
 		if (finalVariables.exists(name)) 
 		{
@@ -634,7 +634,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			if (cl?.variableExists(name)) 
 			{
 				cl.setVariable(name, v);
-				return;
+				return v;
 			}
 
 			final lastValue = variables.get(name);
@@ -644,6 +644,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			else
 				variables.set(name, v);
 		}
+		return v;
 	}
 
 	override function exprReturn(e):Dynamic
@@ -817,6 +818,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 							}
 						}
 						#if hl hl.Api.rethrow(err); #else throw err; #end
+						return null;
 
 					default:
 						(onMeta != null) ? onMeta(n, args, e) : exprMeta(n, args, e);
