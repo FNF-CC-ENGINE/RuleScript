@@ -1047,7 +1047,10 @@ class HScriptParser extends hscript.Parser
 					if (maybe(TDoubleDot))
 						arg.t = parseType();
 					if (maybe(TOp("=")))
+					{
 						arg.value = parseExpr();
+						arg.opt = true;
+					}
 				}
 
 				if (isRest)
