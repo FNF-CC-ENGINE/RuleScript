@@ -77,9 +77,17 @@ class RuleScriptInlineMacro
         if (fullPath.startsWith('hl')) return [];
 
         final genFields:Array<Field> = [];
+
+        final publicProps = [
+            for (f in fields)
+                if (f.isPublic && f.kind.match(FVar(_, _))) f.name
+        ];
         for (field in fields) 
         {
-            if (field.kind.match(FMethod(MethInline)) && field.isPublic) 
+            final isAccessor = (field.name.startsWith('get_') || field.name.startsWith('set_'))
+                && publicProps.contains(field.name.substr(4));
+
+            if (field.kind.match(FMethod(MethInline)) && (field.isPublic || isAccessor)) 
             {
                 switch (field.type) 
                 {

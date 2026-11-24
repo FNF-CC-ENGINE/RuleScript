@@ -1194,6 +1194,26 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		return obj;
 	}
 
+	function resolveWrapperField(o:Dynamic, fieldName:String):{cls:Class<Dynamic>, fn:Dynamic}
+	{
+		var cls = Type.getClass(o);
+		while (cls != null)
+		{
+			final className = Type.getClassName(cls);
+			final pack = className.split('.');
+			final name = pack.pop();
+
+			final wrapperName = "rulescript._internal.classes." + (pack.length > 0 ? pack.join('.') + "." : "") + name + "_RuleScriptImpl_";
+			final wrapperCls = Type.resolveClass(wrapperName);
+
+			if (wrapperCls != null && Reflect.hasField(wrapperCls, fieldName))
+				return {cls: wrapperCls, fn: Reflect.field(wrapperCls, fieldName)};
+
+			cls = Type.getSuperClass(cls);
+		}
+		return null;
+	}
+
 	#if (hscript >= "2.7.0")
 	override function makeKeyValueIterator(v:Dynamic):KeyValueIterator<Dynamic, Dynamic>
 	{
@@ -1251,6 +1271,10 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		
 		if (prop != null)
 			return getScriptProp(prop);
+
+		final inlineGetter = resolveWrapperField(o, 'get_' + f);
+		if (inlineGetter != null)
+			return getScriptProp(Reflect.callMethod(inlineGetter.cls, inlineGetter.fn, [o]));
 
 		if (Tools.isEnum(o))
 		{
@@ -1320,6 +1344,10 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			}
 		}
 
+		final inlineSetter = resolveWrapperField(o, 'set_' + f);
+		if (inlineSetter != null)
+			return Reflect.callMethod(inlineSetter.cls, inlineSetter.fn, [o, v]);
+
 		Reflect.setProperty(o, f, v);
 		return v;
 	}
@@ -1365,25 +1393,9 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			return call(o, func, args);
 		}
 
-		var cls = Type.getClass(o);
-		while (cls != null) 
-		{
-			final className = Type.getClassName(cls);
-			final pack = className.split('.');
-			final name = pack.pop();
-			
-			final wrapperName = "rulescript._internal.classes." + (pack.length > 0 ? pack.join('.') + "." : "") + name + "_RuleScriptImpl_";
-			final wrapperCls = Type.resolveClass(wrapperName);
-			
-			if (wrapperCls != null && Reflect.hasField(wrapperCls, f)) 
-			{
-				final inlineFunc = Reflect.field(wrapperCls, f);
-				final inlineArgs = [o].concat(args);
-
-				return Reflect.callMethod(wrapperCls, inlineFunc, inlineArgs);
-			}
-			cls = Type.getSuperClass(cls);
-		}
+		final wrapper = resolveWrapperField(o, f);
+		if (wrapper != null)
+			return Reflect.callMethod(wrapper.cls, wrapper.fn, [o].concat(args));
 
 		return super.fcall(o, f, args);
 	}
@@ -1496,7 +1508,8 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		}
 	}
 
-	private function validateFieldAccess(obj:Dynamic, field:String):Void {
+	private function validateFieldAccess(obj:Dynamic, field:String):Void 
+	{
 		if (obj == null || obj == this) return;
 		
 		if (obj is RuleScriptedClass || obj is ScriptedType || obj is haxe.Constraints.IMap) return;
@@ -1507,10 +1520,19 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		final className = Type.getClassName(cls);
 		if (className == null || ["String", "Array"].contains(className)) return;
 		
-		function checkField(c:Class<Dynamic>):Bool {
+		function checkField(c:Class<Dynamic>):Bool 
+		{
 			if (c == null) return false;
 			if (Type.getInstanceFields(c).contains(field) || Type.getClassFields(c).contains(field)) return true;
 			if (Type.getInstanceFields(c).contains('get_$field') || Type.getInstanceFields(c).contains('set_$field')) return true;
+
+			final className = Type.getClassName(c);
+			final pack = className.split('.');
+			final name = pack.pop();
+			final wrapperCls = Type.resolveClass("rulescript._internal.classes." + (pack.length > 0 ? pack.join('.') + "." : "") + name + "_RuleScriptImpl_");
+			if (wrapperCls != null && (Reflect.hasField(wrapperCls, field) || Reflect.hasField(wrapperCls, 'get_$field') || Reflect.hasField(wrapperCls, 'set_$field')))
+				return true;
+
 			return checkField(Type.getSuperClass(c));
 		}
 		
