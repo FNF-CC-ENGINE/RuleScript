@@ -47,6 +47,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 	public var isSuperCall:Bool = false;
 	public var isBeforeSuper:Bool = false;
 	public var hasCalledSuper:Bool = false;
+	public var privateAccess:Bool = false;
 
 	public var hasErrorHandler:Bool = false;
 	public var errorHandler(default, set):haxe.Exception->Void;
@@ -820,6 +821,22 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 						#if hl hl.Api.rethrow(err); #else throw err; #end
 						return null;
 
+					case ':privateAccess':
+						final old = privateAccess;
+						privateAccess = true;
+						try
+						{
+							final res = this.expr(e);
+							privateAccess = old;
+							return res;
+						}
+						catch (err:Dynamic)
+						{
+							privateAccess = old;
+							#if hl hl.Api.rethrow(err); #else throw err; #end
+							return null;
+						}
+
 					default:
 						(onMeta != null) ? onMeta(n, args, e) : exprMeta(n, args, e);
 				}
@@ -1175,7 +1192,9 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 				else
 				{
 					final field = typePath.substring(typePath.lastIndexOf('.') + 1);
-					return typePaths[typePath] = get(resolveType(typePath.substring(0, typePath.lastIndexOf('.'))), field);
+					final resolved = get(resolveType(typePath.substring(0, typePath.lastIndexOf('.'))), field);
+					if (resolved != null) typePaths[typePath] = resolved;
+					return resolved;
 				}
 			}
 		}
@@ -1194,8 +1213,29 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		return obj;
 	}
 
-	function resolveWrapperField(o:Dynamic, fieldName:String):{cls:Class<Dynamic>, fn:Dynamic}
+	function resolveWrapper(o:Dynamic, fieldName:String):{cls:Class<Dynamic>, fn:Dynamic, isStatic:Bool}
 	{
+		if (Tools.isClass(o))
+		{
+			final className = Type.getClassName(cast o);
+			if (className == null) return null;
+
+			final pack = className.split('.');
+			final rawName = pack.pop();
+			final isImpl = StringTools.endsWith(rawName, "_Impl_");
+			final typeName = isImpl ? rawName.substr(0, rawName.length - "_Impl_".length) : rawName;
+			if (isImpl && pack.length > 0 && StringTools.startsWith(pack[pack.length - 1], "_"))
+				pack.pop();
+
+			final prefix = isImpl ? "rulescript._internal.abstracts." : "rulescript._internal.classes.";
+			final wrapperCls = Type.resolveClass(prefix + (pack.length > 0 ? pack.join('.') + "." : "") + typeName + "_RuleScriptImpl_");
+
+			if (wrapperCls != null && (Reflect.hasField(wrapperCls, fieldName) || Type.getClassFields(wrapperCls).contains(fieldName)))
+				return {cls: wrapperCls, fn: Reflect.field(wrapperCls, fieldName), isStatic: true};
+
+			return null;
+		}
+
 		var cls = Type.getClass(o);
 		while (cls != null)
 		{
@@ -1207,7 +1247,7 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			final wrapperCls = Type.resolveClass(wrapperName);
 
 			if (wrapperCls != null && Reflect.hasField(wrapperCls, fieldName))
-				return {cls: wrapperCls, fn: Reflect.field(wrapperCls, fieldName)};
+				return {cls: wrapperCls, fn: Reflect.field(wrapperCls, fieldName), isStatic: false};
 
 			cls = Type.getSuperClass(cls);
 		}
@@ -1272,9 +1312,13 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 		if (prop != null)
 			return getScriptProp(prop);
 
-		final inlineGetter = resolveWrapperField(o, 'get_' + f);
+		final inlineField = resolveWrapper(o, f);
+		if (inlineField != null && inlineField.isStatic)
+			return getScriptProp(Reflect.getProperty(inlineField.cls, f));
+
+		final inlineGetter = resolveWrapper(o, 'get_' + f);
 		if (inlineGetter != null)
-			return getScriptProp(Reflect.callMethod(inlineGetter.cls, inlineGetter.fn, [o]));
+			return getScriptProp(Reflect.callMethod(inlineGetter.cls, inlineGetter.fn, inlineGetter.isStatic ? [] : [o]));
 
 		if (Tools.isEnum(o))
 		{
@@ -1344,9 +1388,12 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			}
 		}
 
-		final inlineSetter = resolveWrapperField(o, 'set_' + f);
+		final inlineSetter = resolveWrapper(o, 'set_' + f);
 		if (inlineSetter != null)
-			return Reflect.callMethod(inlineSetter.cls, inlineSetter.fn, [o, v]);
+		{
+			Reflect.callMethod(inlineSetter.cls, inlineSetter.fn, inlineSetter.isStatic ? [v] : [o, v]);
+			return v;
+		}
 
 		Reflect.setProperty(o, f, v);
 		return v;
@@ -1393,9 +1440,9 @@ class RuleScriptInterp extends hscript.Interp implements IInterp
 			return call(o, func, args);
 		}
 
-		final wrapper = resolveWrapperField(o, f);
+		final wrapper = resolveWrapper(o, f);
 		if (wrapper != null)
-			return Reflect.callMethod(wrapper.cls, wrapper.fn, [o].concat(args));
+			return Reflect.callMethod(wrapper.cls, wrapper.fn, wrapper.isStatic ? args : [o].concat(args));
 
 		return super.fcall(o, f, args);
 	}

@@ -26,10 +26,10 @@ class AbstractMacro
 				if (FileSystem.exists(dir + name))
 					for (abs in parseFile(File.getContent(dir + name)))
 					{
-						if (abs.startsWith('#') || abs.startsWith('//') || abs.length == 0) {} // Comment
-						else if (abs.startsWith('-#')) // Ignore
+						if (abs.startsWith('#') || abs.startsWith('//') || abs.length == 0) {}
+						else if (abs.startsWith('-#'))
 							ignoreList.push(abs);
-						else if (!abstractsList.contains(abs)) // Add
+						else if (!abstractsList.contains(abs))
 							abstractsList.push(abs);
 					}
 		}
@@ -409,17 +409,18 @@ class AbstractMacro
 				alias = typePath.pack.join('.') + '.' + alias;
 		}
 
+		final seenFields:Array<String> = [];
 		var value:Expr = {
 			expr: EObjectDecl([
 				for (field in type.impl.get().statics.get())
-					if (!field.meta.has(':ignoreField') && !field.meta.has(':impl') && field.name != '_new')
+					if (!field.meta.has(':ignoreField') && field.name != '_new' && field.name != '__new' && field.name != '_hx_new' && !seenFields.contains(field.name))
 					{
 						var isStatic:Bool = true;
 
 						switch (field.expr()?.expr)
 						{
 							case TFunction(f):
-								if (f.args[0] != null && f.args[0].v.name.startsWith('this'))
+								if (f.args[0] != null && ~/^this\d*$/.match(f.args[0].v.name))
 									isStatic = false;
 							default:
 						}
@@ -444,10 +445,13 @@ class AbstractMacro
 							} catch (_:Dynamic) false;
 
 							if (valid)
+							{
+								seenFields.push(field.name);
 								{
 									field: field.name,
 									expr: expr
 								}
+							}
 						}
 					}
 			]),
